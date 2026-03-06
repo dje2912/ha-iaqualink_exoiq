@@ -1,5 +1,5 @@
 <p align="center">
-<img src="custom_components/iaqualink_exoiq/logo.png" width="180">
+<img src="custom_components/iaqualink_exoiq/icon.png" width="180">
 </p>
 
 # iAqualink ExoIQ for Home Assistant
