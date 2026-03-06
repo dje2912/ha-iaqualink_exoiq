@@ -1,0 +1,16 @@
+{
+  "domain": "iaqualink_exoiq",
+  "name": "iAqualink ExoIQ by Dje",
+  "version": "0.1.0",
+  "documentation": "https://github.com/dje2912/iaqualink_exoiq",
+  "issue_tracker": "https://github.com/dje2912/iaqualink_exoiq/issues",
+  "codeowners": ["@dje2912"],
+  "config_flow": true,
+  "single_config_entry": true,
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "loggers": [
+    "custom_components.iaqualink_exoiq",
+    "iaqualink_exoiq"
+  ]
+}
