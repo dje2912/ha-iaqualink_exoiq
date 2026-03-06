@@ -254,17 +254,3 @@ It is a reverse-engineered integration based on the public behaviour of the iAqu
 Author
 
 Developed and maintained by the Home Assistant community.
-
-Si tu veux, je peux aussi te faire une version README encore plus propre (niveau HACS / repo GitHub public) avec :
-
-images Home Assistant
-
-architecture de l’intégration
-
-diagramme API Exo
-
-badges HACS
-
-instructions contribution
-
-qui donnerait un repo très pro.
