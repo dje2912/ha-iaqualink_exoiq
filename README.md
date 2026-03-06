@@ -1,3 +1,7 @@
+<p align="center">
+<img src="custom_components/iaqualink_exoiq/icon.png" width="180">
+</p>
+
 # iAqualink ExoIQ for Home Assistant
 
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Custom%20Integration-blue)
