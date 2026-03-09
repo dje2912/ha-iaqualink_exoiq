@@ -11,6 +11,7 @@ MIN_SECS_TO_REFRESH = 60
 
 """Constants for the iaqualink component."""
 DOMAIN = "iaqualink_exoiq"
+MANUFACTURER = "Zodiac by Dje"
 UPDATE_INTERVAL = timedelta(seconds=120)
 
 AQUALINK_TEMP_CELSIUS_HIGH = 40

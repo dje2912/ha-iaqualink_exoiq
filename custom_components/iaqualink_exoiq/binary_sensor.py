@@ -9,6 +9,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import AqualinkEntity
@@ -67,6 +68,17 @@ class AqualinkBinarySensorEntity(AqualinkEntity, BinarySensorEntity):
 
         elif self._attr_name == "Freeze Protection":
             self._attr_device_class = BinarySensorDeviceClass.COLD
+
+        # --- MQTT binary sensor ---
+        exo_diag_binary_names = {
+            "exo_mqtt_status": "Exo MQTT Status",
+            "exo_mqtt_connection": "Exo MQTT Connection",
+        }
+
+        if dev_name in exo_diag_binary_names:
+            self._attr_name = exo_diag_binary_names[dev_name]
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+            self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     @property
     def is_on(self) -> bool:

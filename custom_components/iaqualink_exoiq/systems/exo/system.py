@@ -31,7 +31,9 @@ class ExoSystem(AqualinkSystem):
         # This lives in the parent class but mypy complains.
         self.last_refresh: int = 0
         self.temp_unit = "C"  # TODO: check if unit can be changed on panel?
-
+        #self.raw_shadow: dict[str, Any] = {}
+        self.raw_shadow = data
+        
     def __repr__(self) -> str:
         attrs = ["name", "serial", "data"]
         attrs = [f"{i}={getattr(self, i)!r}" for i in attrs]
@@ -93,7 +95,8 @@ class ExoSystem(AqualinkSystem):
 
     def _parse_shadow_response(self, response: httpx.Response) -> None:
         data = response.json()
-    
+        self.raw_shadow = data 
+
         _LOGGER.debug("IAQUALINK_EXOIQ - RAW EXO JSON: %s", data)
         _LOGGER.debug("IAQUALINK_EXOIQ - PARSE SHADOW EXO system.py LOADED FROM: %s", __file__)
     
@@ -124,7 +127,45 @@ class ExoSystem(AqualinkSystem):
                 "name": name,
                 "state": data["state"]["reported"]["heating"]["state"],
             }
-    
+
+        # --- Diagnostic / Health data ---
+        reported = data.get("state", {}).get("reported", {}) or {}
+        debug = reported.get("debug", {}) or {}
+        aws = reported.get("aws", {}) or {}
+
+        # Root firmware / cloud status
+        if "vr" in reported:
+            devices["exo_fw_version"] = {
+                "name": "exo_fw_version",
+                "state": reported.get("vr"),
+            }
+
+        if "status" in aws:
+            devices["exo_mqtt_status"] = {
+                "name": "exo_mqtt_status",
+                "state": 1 if aws.get("status") == "connected" else 0,
+                "status": aws.get("status"),
+            }
+
+        if "timestamp" in aws:
+            devices["exo_cloud_timestamp"] = {
+                "name": "exo_cloud_timestamp",
+                "state": aws.get("timestamp"),
+            }
+
+        # Debug values
+        if "RSSI" in debug:
+            devices["exo_rssi"] = {
+                "name": "exo_rssi",
+                "state": debug.get("RSSI"),
+            }
+
+        if "MQTT connection" in debug:
+            devices["exo_mqtt_connection"] = {
+                "name": "exo_mqtt_connection",
+                "state": int(debug.get("MQTT connection") or 0),
+            }
+
         # --- Schedules (timers) ---
         schedules = data["state"]["reported"].get("schedules", {}) or {}
         #_LOGGER.debug(
@@ -184,7 +225,7 @@ class ExoSystem(AqualinkSystem):
                 "endpoint": endpoint,
                 "state": int(sch.get("active", 0) or 0),
             }
-    
+
         # ---- APPLY devices dict into self.devices (IMPORTANT) ----
         for k, v in devices.items():
             if k in self.devices:

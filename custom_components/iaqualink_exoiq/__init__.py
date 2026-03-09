@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpda
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 
-from .const import DOMAIN, UPDATE_INTERVAL, KEEPALIVE_EXPIRY
+from .const import DOMAIN, UPDATE_INTERVAL, KEEPALIVE_EXPIRY, MANUFACTURER
 from .client import AqualinkClient
 
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
@@ -155,8 +155,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             elif cls == "AqualinkBinarySensor":
                 platform_devices[BINARY_SENSOR_DOMAIN].append(dev)
             
-            #---Pump Special Case
-            elif dev_name in ("filter_pump", "exo_state"):
+            #---PUMP & MQTT Special Case
+            elif dev_name in ("filter_pump", "exo_state", "exo_mqtt_status", "exo_mqtt_connection"):
                 platform_devices[BINARY_SENSOR_DOMAIN].append(dev)
         
             # --- SENSOR ---
@@ -298,15 +298,37 @@ class AqualinkEntity(CoordinatorEntity):
             return DeviceInfo(
                 identifiers={(DOMAIN, f"{serial}_{schedule_id}")},
                 name=f"Schedule {schedule_name}",
-                manufacturer="Zodiac by Dje",
+                manufacturer=MANUFACTURER,
                 model="Exo Schedule",
                 via_device=(DOMAIN, serial),   # parent
+            )
+        
+        # ---- Exo system: child device ----
+         exo_system_names = {
+            "sn",
+            "vr",
+            "version",
+            "error_state",
+            "error_code",
+            "exo_rssi",
+            "exo_fw_version",
+            "exo_cloud_timestamp",
+            "exo_mqtt_status",
+        }
+
+        if dev_name in exo_system_names:
+            return DeviceInfo(
+                identifiers={(DOMAIN, f"{serial}_exo_system")},
+                name="Exo System",
+                manufacturer=MANUFACTURER,
+                model="ExoIQ Diagnostics",
+                via_device=(DOMAIN, serial),
             )
 
         # ---- ALL OTHER ENTITIES: Parent device ----
         return DeviceInfo(
             identifiers={(DOMAIN, serial)},
             name=sys_name,
-            manufacturer="Zodiac by Dje",
+            manufacturer=MANUFACTURER,
             model=self.dev.system.__class__.__name__,
         )

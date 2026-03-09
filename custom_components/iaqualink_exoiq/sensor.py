@@ -83,7 +83,19 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
         self._attr_unique_id = f"{dev.system.serial}_{dev.name}"
 
         # Entity "diagnostic" (infos appareil)
-        if self.dev.name in ("sn", "vr", "version"):
+        exo_diag_names = {
+            "sn": "Exo Serial Number",
+            "vr": "Exo Firmware Version",
+            "version": "Exo Software Version",
+            "error_state": "Exo Error State",
+            "error_code": "Exo Error Code",
+            "exo_rssi": "Exo RSSI",
+            "exo_fw_version": "Exo Cloud Firmware Version",
+            "exo_cloud_timestamp": "Exo Cloud Timestamp",
+        }
+
+        if self.dev.name in exo_diag_names:
+            self._attr_name = exo_diag_names[self.dev.name]
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
         # Temperature
@@ -138,6 +150,10 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
         # Pump Speed (RPM)
         if self.dev.name.endswith("_rpm"):
             return "rpm"
+
+        # RSSI (dBm)
+        if self.dev.name == "exo_rssi":
+            return "dBm"
 
         return None
     
@@ -199,6 +215,13 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
                 val = float(raw) / 10
             except (TypeError, ValueError):
                 val = None
+
+        # ----- Timestamp ----- 
+        elif self.dev.name == "exo_cloud_timestamp":
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return None
 
         # ----- Default: int / float sinon string -----
         else:
