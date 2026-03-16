@@ -67,20 +67,15 @@ class AqualinkClient:
         self,
         username: str,
         password: str,
-        httpx_client: httpx.AsyncClient | None = None,
-    ):
+        httpx_client: httpx.AsyncClient,
+    ) -> None:
         self._username = username
         self._password = password
         self._logged = False
 
-        self._client: httpx.AsyncClient | None = None
-
-        if httpx_client is None:
-            self._client = None
-            self._must_close_client = True
-        else:
-            self._client = httpx_client
-            self._must_close_client = False
+        # Home Assistant-managed shared client
+        self._client: httpx.AsyncClient = httpx_client
+        self._must_close_client = False
 
         self.client_id = ""
         self._token = ""
@@ -94,18 +89,17 @@ class AqualinkClient:
         return self._logged
 
     async def close(self) -> None:
-        if self._must_close_client is False:
-            return
-
-        if self._client is not None:
+        #Close client if owned by this instance.
+        if self._must_close_client and self._client is not None:
             await self._client.aclose()
             self._client = None
+
 
     async def __aenter__(self) -> Self:
         try:
             await self.login()
         except AqualinkServiceException:
-            await self.close()
+            #await self.close()
             raise
 
         return self
@@ -121,13 +115,7 @@ class AqualinkClient:
 
 
     async def send_request(self, url: str, method: str = "get", **kwargs: Any) -> Any:
-        """HTTP request with retries (401 relogin, 429 backoff, network retry)."""
-    
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                http2=True,
-                limits=httpx.Limits(keepalive_expiry=KEEPALIVE_EXPIRY),
-            )
+        #HTTP request with retries (401 relogin, 429 backoff, network retry).
     
         max_retries = 6
         base_delay = 5
@@ -138,25 +126,29 @@ class AqualinkClient:
         # IMPORTANT: extract extra headers once, outside retry loop
         extra_headers = kwargs.pop("headers", {}) or {}
     
+        if self._client is None:
+            raise AqualinkServiceException("HTTP client is not initialized")
+
+    
         for attempt in range(1, max_retries + 1):
             # rebuild headers at every attempt
             headers = AQUALINK_HTTP_HEADERS.copy()
             headers.update(extra_headers)
     
             try:
-                _LOGGER.debug("IAQUALINK_EXOIQ -> %s %s %s", method.upper(), url, kwargs)
+                _LOGGER.debug("iAQUALINK_eXO-IQ -> %s %s %s", method.upper(), url, kwargs)
                 r = await self._client.request(method, url, headers=headers, **kwargs)
     
                 status = _resp_status(r)
                 reason = getattr(r, "reason_phrase", "")
-                _LOGGER.debug("IAQUALINK_EXOIQ <- %s %s - %s", status, reason, url)
+                _LOGGER.debug("iAQUALINK_eXO-IQ <- %s %s - %s", status, reason, url)
     
                 # 401 Unauthorized => relogin then retry
                 if status == 401:
                     last_exc = AqualinkServiceUnauthorizedException(f"401 on {url}")
                     self._logged = False
                     _LOGGER.warning(
-                        "IAQUALINK_EXOIQ - 401 Unauthorized on %s (attempt %s/%s) -> re-login",
+                        "iAQUALINK_eXO-IQ - 401 Unauthorized on %s (attempt %s/%s) -> re-login",
                         url, attempt, max_retries
                     )
     
@@ -184,14 +176,14 @@ class AqualinkClient:
                         except ValueError:
                             sleep_s = base_delay
                         _LOGGER.warning(
-                            "IAQUALINK_EXOIQ - Rate limited (429). Retry-After=%s -> sleeping %ss",
+                            "iAQUALINK_eXO-IQ - Rate limited (429). Retry-After=%s -> sleeping %ss",
                             retry_after_hdr, sleep_s
                         )
                     else:
                         sleep_s = min(base_delay * (2 ** (attempt - 1)), max_delay)
                         sleep_s = sleep_s + random.uniform(0, 1.0)
                         _LOGGER.warning(
-                            "IAQUALINK_EXOIQ - Rate limited (429). sleeping %.1fs (attempt %s/%s)",
+                            "iAQUALINK_eXO-IQ - Rate limited (429). sleeping %.1fs (attempt %s/%s)",
                             sleep_s, attempt, max_retries
                         )
     
@@ -216,7 +208,7 @@ class AqualinkClient:
                 sleep_s = min(base_delay * (2 ** (attempt - 1)), max_delay)
                 sleep_s = sleep_s + random.uniform(0, 1.0)
                 _LOGGER.warning(
-                    "IAQUALINK_EXOIQ - HTTP transient error (%s) on %s -> sleeping %.1fs (attempt %s/%s)",
+                    "iAQUALINK_eXO-IQ - HTTP transient error (%s) on %s -> sleeping %.1fs (attempt %s/%s)",
                     type(e).__name__, url, sleep_s, attempt, max_retries
                 )
                 if attempt >= max_retries:
@@ -227,12 +219,12 @@ class AqualinkClient:
             except httpx.HTTPStatusError as e:
                 last_exc = e
                 st = _resp_status(e.response)
-                _LOGGER.error("IAQUALINK_EXOIQ - HTTP error %s on %s: %s", st, url, e)
+                _LOGGER.error("iAQUALINK_eXO-IQ - HTTP error %s on %s: %s", st, url, e)
                 raise AqualinkServiceException(str(e)) from e
     
             except Exception as e:
                 last_exc = e
-                _LOGGER.error("IAQUALINK_EXOIQ - Unexpected error calling %s: %s", url, e)
+                _LOGGER.error("iAQUALINK_eXO-IQ - Unexpected error calling %s: %s", url, e)
                 raise AqualinkServiceException(str(e)) from e
     
         raise AqualinkServiceException(
@@ -265,7 +257,7 @@ class AqualinkClient:
             except Exception as e:
                 if attempt == max_retries - 1:
                     raise
-                _LOGGER.warning("IAQUALINK_EXOIQ - Login failed, retrying in %s seconds... (%s)", retry_delay, e)
+                _LOGGER.warning("iAQUALINK_eXO-IQ - Login failed, retrying in %s seconds... (%s)", retry_delay, e)
                 await asyncio.sleep(retry_delay)
 
     async def _send_systems_request(self) -> httpx.Response:

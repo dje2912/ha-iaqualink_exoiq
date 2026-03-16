@@ -20,7 +20,7 @@ from .const import (
     AQUALINK_TEMP_FAHRENHEIT_LOW,
     DOMAIN as AQUALINK_DOMAIN,
 )
-from .device import AqualinkHeater, AqualinkPump, AqualinkSensor, AqualinkThermostat
+from .device import AqualinkPump, AqualinkSensor, AqualinkThermostat
 from .utils import await_or_reraise
 
 _LOGGER = logging.getLogger(__name__)
@@ -290,18 +290,6 @@ class AqualinkThermostatEntity(AqualinkEntity, ClimateEntity):
             return float(val)
         except (TypeError, ValueError):
             return None
-
-    @property
-    def heater(self) -> AqualinkHeater:
-        dev_name = getattr(self.dev, "name", "").lower()
-
-        # ExoIQ : switch linked to Heating
-        if dev_name == "heating":
-            return self.dev.system.devices["heater"]
-
-        # fallback old behaviour
-        heater_key = f"{self.name.lower()}_heater"
-        return self.dev.system.devices[heater_key]
 
     @property
     def pump(self) -> AqualinkPump:

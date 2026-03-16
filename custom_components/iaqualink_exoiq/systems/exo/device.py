@@ -4,6 +4,9 @@ import logging
 from enum import Enum, unique
 from typing import TYPE_CHECKING, Any, cast
 
+
+from ...const import MANUFACTURER
+
 from ...device import (
     AqualinkDevice,
     AqualinkSensor,
@@ -49,7 +52,7 @@ class ExoDevice(AqualinkDevice):
 
     @property
     def manufacturer(self) -> str:
-        return "Zodiac"
+        return MANUFACTURER
 
     @property
     def model(self) -> str:
@@ -67,8 +70,6 @@ class ExoDevice(AqualinkDevice):
             class_ = ExoSensor
         elif data["name"] == "heating":
             class_ = ExoThermostat
-        elif data["name"] == "heater":
-            class_ = ExoHeater
         elif data["name"] in ["production", "boost", "low"]:
             class_ = ExoAttributeSwitch
         else:
@@ -123,22 +124,22 @@ class ExoSwitch(ExoDevice, AqualinkSwitch):
         raise NotImplementedError
 
     async def turn_on(self) -> None:
-        _LOGGER.debug("IAQUALINK_EXOIQ - EXO DEVICE turn_on called name=%s state=%s is_on=%s", self.name, self.data.get("state"), self.is_on)
+        _LOGGER.debug("iAQUALINK_eXO-IQ - EXO DEVICE turn_on called name=%s state=%s is_on=%s", self.name, self.data.get("state"), self.is_on)
         if not self.is_on:
             cmd = self._command
-            _LOGGER.debug("IAQUALINK_EXOIQ - EXO DEVICE turn_on will call %s(%s, 1)", getattr(cmd, "__name__", str(cmd)), self.name)
+            _LOGGER.debug("iAQUALINK_eXO-IQ - EXO DEVICE turn_on will call %s(%s, 1)", getattr(cmd, "__name__", str(cmd)), self.name)
             await cmd(self.name, 1)
         else:
-            _LOGGER.debug("IAQUALINK_EXOIQ - EXO DEVICE turn_on skipped (already on) name=%s", self.name)
+            _LOGGER.debug("iAQUALINK_eXO-IQ - EXO DEVICE turn_on skipped (already on) name=%s", self.name)
 
     async def turn_off(self) -> None:
-        _LOGGER.debug("IAQUALINK_EXOIQ - EXO DEVICE turn_off called name=%s state=%s is_on=%s", self.name, self.data.get("state"), self.is_on)
+        _LOGGER.debug("iAQUALINK_eXO-IQ - EXO DEVICE turn_off called name=%s state=%s is_on=%s", self.name, self.data.get("state"), self.is_on)
         if self.is_on:
             cmd = self._command
-            _LOGGER.debug("IAQUALINK_EXOIQ - EXO DEVICE turn_off will call %s(%s, 0)", getattr(cmd, "__name__", str(cmd)), self.name)
+            _LOGGER.debug("iAQUALINK_eXO-IQ - EXO DEVICE turn_off will call %s(%s, 0)", getattr(cmd, "__name__", str(cmd)), self.name)
             await cmd(self.name, 0)
         else:
-            _LOGGER.debug("IAQUALINK_EXOIQ - EXO DEVICE turn_off skipped (already off) name=%s", self.name)
+            _LOGGER.debug("iAQUALINK_eXO-IQ - EXO DEVICE turn_off skipped (already off) name=%s", self.name)
 
 
 class ExoAuxSwitch(ExoSwitch):
@@ -150,9 +151,6 @@ class ExoAttributeSwitch(ExoSwitch):
     @property
     def _command(self) -> Callable[[str, int], Coroutine[Any, Any, None]]:
         return self.system.set_toggle
-
-class ExoHeater(ExoDevice):
-    """This device is to seperate the state of the heater from the thermostat to maintain the existing homeassistant API"""
 
 class ExoScheduleSensor(ExoDevice, AqualinkSensor):
     """Schedule sensor: exposes timer and status via attributes."""
@@ -169,10 +167,6 @@ class ExoThermostat(ExoSwitch, AqualinkThermostat):
     @property
     def _sensor(self) -> ExoSensor:
         return cast(ExoSensor, self.system.devices["sns_3"])
-
-    @property
-    def _heater(self) -> ExoHeater:
-        return cast(ExoSensor, self.system.devices["heater"])
 
     @property
     def current_temperature(self) -> str:

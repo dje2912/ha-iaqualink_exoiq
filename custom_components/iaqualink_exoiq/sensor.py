@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 
 from homeassistant.components.sensor import (
@@ -9,31 +10,52 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import AqualinkEntity
-from .const import DOMAIN as AQUALINK_DOMAIN
+from .const import (
+    DOMAIN as AQUALINK_DOMAIN,
+    ENTITY_DIAG_SENSOR_NAMES,
+    ENTITY_ICONS,
+    ENTITY_SYSTEM_SENSOR_NAMES,
+)
 from .device import AqualinkSensor
+from .timer_helpers import (
+    get_timer_entity_name,
+    get_timer_group_from_endpoint,
+    get_timer_object_id,
+    get_timer_role_from_endpoint,
+    get_timer_unique_id,
+)
 
 PARALLEL_UPDATES = 0
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    _LOGGER.debug("IAQUALINK_EXOIQ - sensor.py async_setup_entry CALLED")
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up Aqualink sensors."""
+    _LOGGER.debug("iAQUALINK_eXO-IQ - sensor.py async_setup_entry CALLED")
 
     entry_data = hass.data[AQUALINK_DOMAIN][entry.entry_id]
     coordinator = entry_data["coordinator"]
     devs = entry_data["platform_devices"][SENSOR_DOMAIN]
 
     _LOGGER.debug(
-        "IAQUALINK_EXOIQ - sensor.py devs count=%s schedule_devs=%s",
+        "iAQUALINK_eXO-IQ - sensor.py devs count=%s timer_devs=%s",
         len(devs),
-        [getattr(d, "name", "") for d in devs if getattr(d, "name", "").startswith("schedule_")][:20],
+        [
+            getattr(d, "name", "")
+            for d in devs
+            if getattr(d, "name", "").startswith("schedule_")
+        ][:20],
     )
 
     entities = []
@@ -42,13 +64,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
             entities.append(AqualinkSensorEntity(coordinator, dev))
         except Exception:
             _LOGGER.exception(
-                "IAQUALINK_EXOIQ - sensor.py FAILED to create entity for dev=%s class=%s data=%s",
+                "iAQUALINK_eXO-IQ - sensor.py FAILED to create entity for dev=%s class=%s data=%s",
                 getattr(dev, "name", None),
                 dev.__class__.__name__,
                 getattr(dev, "data", None),
             )
 
-    _LOGGER.debug("IAQUALINK_EXOIQ - sensor.py about to async_add_entities count=%s", len(entities))
+    _LOGGER.debug(
+        "iAQUALINK_eXO-IQ - sensor.py about to async_add_entities count=%s",
+        len(entities),
+    )
     async_add_entities(entities, True)
     _LOGGER.debug("IAQUALINK sensor.py async_add_entities DONE")
 
@@ -59,116 +84,130 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
     def __init__(self, coordinator, dev: AqualinkSensor) -> None:
         super().__init__(coordinator, dev)
 
-        _LOGGER.debug("IAQUALINK_EXOIQ - sensor entity init dev=%s label=%s", dev.name, dev.label)
+        dev_name = getattr(dev, "name", "") or ""
+        dev_label = getattr(dev, "label", None)
 
-        # Default Name
-        #name = dev.label
-        label = getattr(dev, "label", None)
+        _LOGGER.debug(
+            "iAQUALINK_eXO-IQ - sensor entity init dev=%s label=%s",
+            dev_name,
+            dev_label,
+        )
+
         try:
-            default_name = label if isinstance(label, str) else dev.name
+            default_name = dev_label if isinstance(dev_label, str) else dev_name
         except Exception:
-            default_name = dev.name
-        name = default_name
+            default_name = dev_name
 
-        # Friendly name for schedules
-        if dev.name.startswith("schedule_"):
-            sched_name = dev.data.get("schedule_name")
-            if sched_name:
-                if dev.name.endswith("_rpm"):
-                    name = f"Sch {sched_name} - Speed"
-                else:
-                    name = f"Sch {sched_name}"
+        self._attr_name = default_name
+        self._attr_unique_id = f"{dev.system.serial}_{dev_name}"
 
-        self._attr_name = name
-        self._attr_unique_id = f"{dev.system.serial}_{dev.name}"
+        # --- Timer-based naming for grouped timer sensors ---
+        if dev_name.startswith("schedule_"):
+            endpoint = (getattr(dev, "data", {}) or {}).get("endpoint")
+            group = get_timer_group_from_endpoint(endpoint)
 
-        # Entity "diagnostic" (infos appareil)
-        exo_diag_names = {
-            "sn": "Exo Serial Number",
-            "vr": "Exo Firmware Version",
-            "version": "Exo Software Version",
-            "error_state": "Exo Error State",
-            "error_code": "Exo Error Code",
-            "exo_rssi": "Exo RSSI",
-            "exo_fw_version": "Exo Cloud Firmware Version",
-            "exo_cloud_timestamp": "Exo Cloud Timestamp",
-        }
+            if group is not None:
+                group_id = group[0]
+                kind = "speed" if dev_name.endswith("_rpm") else "sensor"
 
-        if self.dev.name in exo_diag_names:
-            self._attr_name = exo_diag_names[self.dev.name]
+                self._attr_name = get_timer_entity_name(endpoint, kind)
+                self._attr_unique_id = get_timer_unique_id(
+                    dev.system.serial,
+                    "sensor",
+                    group_id,
+                    endpoint,
+                    kind,
+                )
+                self._attr_suggested_object_id = get_timer_object_id(
+                    group_id,
+                    endpoint,
+                    kind,
+                )
+
+        # --- Friendly name for system sensor entities ---
+        if dev_name in ENTITY_SYSTEM_SENSOR_NAMES:
+            self._attr_name = ENTITY_SYSTEM_SENSOR_NAMES[dev_name]
+
+        # --- Friendly name and category for diagnostic sensor entities ---
+        if dev_name in ENTITY_DIAG_SENSOR_NAMES:
+            self._attr_name = ENTITY_DIAG_SENSOR_NAMES[dev_name]
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
-        # Temperature
-        if self.dev.name.endswith("_temp"):
+        # --- Icon for all sensor entities ---
+        if dev_name in ENTITY_ICONS:
+            self._attr_icon = ENTITY_ICONS[dev_name]
+
+        # --- Class for timestamp / last refresh ---
+        if dev_name in ("cloud_timestamp", "last_refresh"):
+            self._attr_device_class = SensorDeviceClass.TIMESTAMP
+
+        # --- Class for temperature ---
+        if dev_name.endswith("_temp"):
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
-        
-        #Cache value for refersh feezing when Production == 0
+
+        # Cache value for refresh freezing when Production == 0
         self._last_good_value = None
         self._is_frozen = False
 
     def _production_is_off(self) -> bool:
-        """True si production == 0. If unknown -> False (don't freeze)."""
+        """True if production == 0. If unknown -> False."""
         try:
             prod_dev = self.dev.system.devices.get("production")
             if not prod_dev:
                 return False
-    
+
             prod_state = getattr(prod_dev, "state", None)
             if prod_state is None and hasattr(prod_dev, "data"):
                 prod_state = prod_dev.data.get("state")
-    
-            # normalise
+
             if isinstance(prod_state, str):
                 s = prod_state.strip()
                 if s.isdigit():
                     prod_state = int(s)
-    
+
             return prod_state == 0
         except Exception:
             return False
 
-
     @property
     def native_unit_of_measurement(self) -> str | None:
         """Return the measurement unit for the sensor."""
-        # Temperatures
-        if self.dev.name.endswith("_temp"):
+        dev_name = getattr(self.dev, "name", "") or ""
+
+        if dev_name.endswith("_temp"):
             return (
                 UnitOfTemperature.FAHRENHEIT
                 if self.dev.system.temp_unit == "F"
                 else UnitOfTemperature.CELSIUS
             )
 
-        # Pourcentages (chlorinateur)
-        if self.dev.name in ("swc", "swc_low"):
+        if dev_name in ("swc", "swc_low"):
             return "%"
 
-        # Voltage (ORP)
-        if self.dev.name in ("orp", "orp_sp"):
+        if dev_name in ("orp", "orp_sp"):
             return "mV"
 
-        # Pump Speed (RPM)
-        if self.dev.name.endswith("_rpm"):
+        if dev_name.endswith("_rpm"):
             return "rpm"
 
-        # RSSI (dBm)
-        if self.dev.name == "exo_rssi":
+        if dev_name == "rssi":
             return "dBm"
 
         return None
-    
+
     @property
     def extra_state_attributes(self):
         attrs = super().extra_state_attributes or {}
-    
+        dev_name = getattr(self.dev, "name", "") or ""
+
         # --- Frozen sensors ---
-        if self.dev.name in {"ph", "orp", "water_temp", "sns_1", "sns_2", "sns_3"}:
+        if dev_name in {"ph", "orp", "water_temp", "sns_1", "sns_2", "sns_3"}:
             attrs["frozen"] = getattr(self, "_is_frozen", False)
-    
-        # --- Schedule main sensor ---
+
+        # --- Main timer sensor ---
         if (
-            self.dev.name.startswith("schedule_")
-            and not self.dev.name.endswith(("_rpm", "_enabled", "_active"))
+            dev_name.startswith("schedule_")
+            and not dev_name.endswith(("_rpm", "_enabled", "_active"))
         ):
             attrs.update(
                 {
@@ -179,51 +218,59 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
                     "end": self.dev.data.get("end"),
                 }
             )
-    
+
         return attrs
 
     @property
     def native_value(self):
-        # ----- Return the state of the sensor. -----
+        dev_name = getattr(self.dev, "name", "") or ""
         raw = self.dev.state
         if raw in ("", None):
             return None
 
         freeze_targets = {"ph", "orp", "water_temp", "sns_1", "sns_2", "sns_3"}
-        is_freeze_target = self.dev.name in freeze_targets
-        should_freeze = is_freeze_target and (self._production_is_off() or not self.available)
+        is_freeze_target = dev_name in freeze_targets
+        should_freeze = is_freeze_target and (
+            self._production_is_off() or not self.available
+        )
 
-        # 1) Value deinition "val" normally
         val = None
 
-        # ----- Schedule RPM sensor (must be numeric) -----
-        if self.dev.name.endswith("_rpm"):
+        # --- Timer speed sensor (must be numeric) ---
+        if dev_name.endswith("_rpm"):
             try:
                 val = int(raw)
             except (TypeError, ValueError):
                 val = None
 
-        # ----- Schedule (readable string) -----
-        elif self.dev.name.startswith("schedule_"):
+        # --- Main timer sensor (readable time range) ---
+        elif dev_name.startswith("schedule_"):
             start = self.dev.data.get("start")
             end = self.dev.data.get("end")
             val = f"{start} → {end}" if start and end else None
 
-        # ----- pH : API return 72 -> 7.2 -----
-        elif self.dev.name in ("ph", "ph_sp"):
+        # --- pH: API returns 72 -> 7.2 ---
+        elif dev_name in ("ph", "ph_sp"):
             try:
                 val = float(raw) / 10
             except (TypeError, ValueError):
                 val = None
 
-        # ----- Timestamp ----- 
-        elif self.dev.name == "exo_cloud_timestamp":
+        # --- Cloud timestamp ---
+        elif dev_name == "cloud_timestamp":
             try:
-                return int(raw)
+                return datetime.fromtimestamp(int(raw) / 1000, timezone.utc)
             except (TypeError, ValueError):
                 return None
 
-        # ----- Default: int / float sinon string -----
+        # --- Last refresh ---
+        elif dev_name == "last_refresh":
+            try:
+                return datetime.fromtimestamp(int(raw), timezone.utc)
+            except (TypeError, ValueError):
+                return None
+
+        # --- Default: int / float / string ---
         else:
             try:
                 val = int(raw)
@@ -232,34 +279,33 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
                     val = float(raw)
                 except (TypeError, ValueError):
                     val = raw
-                
-        # ----- FREEZE LOGIC -----
+
+        # --- Freeze logic ---
         if should_freeze:
             if not self._is_frozen:
                 _LOGGER.debug(
-                    "IAQUALINK_EXOIQ - Freezing %s (production=0) last=%s",
-                    self.dev.name,
+                    "iAQUALINK_eXO-IQ - Freezing %s (production=0) last=%s",
+                    dev_name,
                     self._last_good_value,
                 )
-    
+
             self._is_frozen = True
-    
-            # Au reboot, si pas de cache -> initialise une fois
+
             if self._last_good_value is None and val is not None:
                 self._last_good_value = val
-    
+
             return self._last_good_value
 
-        # ----- NOT FREEZE -----
+        # --- Normal mode ---
         if self._is_frozen:
             _LOGGER.debug(
-                "IAQUALINK_EXOIQ - Unfreezing %s (production resumed)",
-                self.dev.name,
+                "iAQUALINK_eXO-IQ - Unfreezing %s (production resumed)",
+                dev_name,
             )
-    
+
         self._is_frozen = False
-    
+
         if is_freeze_target and val is not None:
             self._last_good_value = val
-    
+
         return val

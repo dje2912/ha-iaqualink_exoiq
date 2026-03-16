@@ -1,4 +1,4 @@
-"""Aqualink ExoIQ Fork Integration"""
+"""Aqualink eXO-IQ Fork Integration"""
 
 import logging
 import httpx
@@ -10,22 +10,37 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 
-from .const import DOMAIN, UPDATE_INTERVAL, KEEPALIVE_EXPIRY, MANUFACTURER
+from .const import DOMAIN, UPDATE_INTERVAL, MANUFACTURER
 from .client import AqualinkClient
+from .timer_helpers import get_timer_group_from_endpoint
+
 
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.components.climate import DOMAIN as CLIMATE_DOMAIN
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
+from homeassistant.components.time import DOMAIN as TIME_DOMAIN
+from homeassistant.components.number import DOMAIN as NUMBER_DOMAIN
+from homeassistant.components.button import DOMAIN as BUTTON_DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [SWITCH_DOMAIN, SENSOR_DOMAIN, CLIMATE_DOMAIN, LIGHT_DOMAIN, BINARY_SENSOR_DOMAIN]
+PLATFORMS = [
+    SWITCH_DOMAIN, 
+    SENSOR_DOMAIN, 
+    CLIMATE_DOMAIN, 
+    LIGHT_DOMAIN, 
+    BINARY_SENSOR_DOMAIN, 
+    TIME_DOMAIN, 
+    NUMBER_DOMAIN, 
+    BUTTON_DOMAIN,
+]
 PARALLEL_UPDATES = 0
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -34,16 +49,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    _LOGGER.debug("IAQUALINK_EXOIQ - async_setup_entry START entry_id=%s", entry.entry_id)
+    _LOGGER.debug("iAQUALINK_eXO-IQ - async_setup_entry START entry_id=%s", entry.entry_id)
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
 
     hass.data.setdefault(DOMAIN, {})
-
-    httpx_client = httpx.AsyncClient(
-        http2=True,
-        limits=httpx.Limits(keepalive_expiry=KEEPALIVE_EXPIRY),
-    )
+    httpx_client = get_async_client(hass)
 
     client = AqualinkClient(username, password, httpx_client)
 
@@ -71,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
             sleep_s = min(base_sleep * (2 ** (attempt - 1)), 30)  # 5,10,20,30,30,30
             _LOGGER.warning(
-                "IAQUALINK_EXOIQ - Bootstrap update: no devices (attempt %s/%s) -> sleep %ss",
+                "iAQUALINK_eXO-IQ - Bootstrap update: no devices (attempt %s/%s) -> sleep %ss",
                 attempt, max_bootstrap_tries, sleep_s
             )
             await asyncio.sleep(sleep_s)
@@ -84,7 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Debug uniquement après bootstrap OK
         schedule_keys = [k for k in devices.keys() if k.startswith("schedule_")]
         _LOGGER.debug(
-            "IAQUALINK_EXOIQ - got devices count=%s schedule_count=%s schedule_keys_sample=%s keys_sample=%s",
+            "iAQUALINK_eXO-IQ - got devices count=%s schedule_count=%s schedule_keys_sample=%s keys_sample=%s",
             len(devices),
             len(schedule_keys),
             schedule_keys[:10],
@@ -94,17 +105,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schedule_keys = [k for k in devices.keys() if k.startswith("schedule_")]
         system.online = True
 
-
         platform_devices = {
             SWITCH_DOMAIN: [],
             SENSOR_DOMAIN: [],
             CLIMATE_DOMAIN: [],
             LIGHT_DOMAIN: [],
             BINARY_SENSOR_DOMAIN: [],
+            TIME_DOMAIN: [],
+            NUMBER_DOMAIN: [],
+            BUTTON_DOMAIN: [],
         }
         
         _LOGGER.debug(
-            "IAQUALINK_EXOIQ - DEVICES AUX: %s",
+            "iAQUALINK_eXO-IQ - DEVICES AUX: %s",
             [(d.name, getattr(d, "data", {}).get("type")) for d in devices.values() if getattr(d, "name", "").startswith("aux_")]
         )
         
@@ -120,9 +133,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 platform_devices[BINARY_SENSOR_DOMAIN].append(dev)      #SCHEDULE Binary sensors 
             elif dev_name.startswith("schedule_") and dev_name.endswith("_rpm"):
                 platform_devices[SENSOR_DOMAIN].append(dev)             #SCHEDULE RPM
+                platform_devices[NUMBER_DOMAIN].append(dev) 
             elif dev_name.startswith("schedule_"):
                 platform_devices[SENSOR_DOMAIN].append(dev)             #SCHEDULE main
-            
+                platform_devices[TIME_DOMAIN].append(dev)
+                platform_devices[BUTTON_DOMAIN].append(dev)
+
             # --- AUX ---
             elif dev_name.startswith("aux_"):
                 data = getattr(dev, "data", None)
@@ -156,7 +172,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 platform_devices[BINARY_SENSOR_DOMAIN].append(dev)
             
             #---PUMP & MQTT Special Case
-            elif dev_name in ("filter_pump", "exo_state", "exo_mqtt_status", "exo_mqtt_connection"):
+            elif dev_name in ("filter_pump", "exo_state", "mqtt_connection"):
                 platform_devices[BINARY_SENSOR_DOMAIN].append(dev)
         
             # --- SENSOR ---
@@ -168,33 +184,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 platform_devices[SENSOR_DOMAIN].append(dev)
         
         _LOGGER.debug(
-            "IAQUALINK_EXOIQ - platform_devices: switches=%s sensors=%s climates=%s lights=%s binary=%s",
+            "iAQUALINK_eXO-IQ - platform_devices: switches=%s sensors=%s climates=%s lights=%s binary=%s times=%s numbers=%s button=%s",
             len(platform_devices[SWITCH_DOMAIN]),
             len(platform_devices[SENSOR_DOMAIN]),
             len(platform_devices[CLIMATE_DOMAIN]),
             len(platform_devices[LIGHT_DOMAIN]),
             len(platform_devices[BINARY_SENSOR_DOMAIN]),
+            len(platform_devices[TIME_DOMAIN]),
+            len(platform_devices[NUMBER_DOMAIN]),
+            len(platform_devices[BUTTON_DOMAIN]),
         )
 
         sched_in_sensors = [d.name for d in platform_devices[SENSOR_DOMAIN] if d.name.startswith("schedule_")]
-        _LOGGER.debug("IAQUALINK_EXOIQ - SCHEDULES classified as SENSOR = %s", sched_in_sensors)
+        _LOGGER.debug("iAQUALINK_eXO-IQ - SCHEDULES classified as SENSOR = %s", sched_in_sensors)
 
     except Exception as e:
-        await httpx_client.aclose()
         raise ConfigEntryNotReady from e
 
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
         "system": system,
-        "httpx_client": httpx_client,
         "platform_devices": platform_devices,
     }
 
     async def async_update():
-        #_LOGGER.debug("IAQUALINK_EXOIQ - COORD UPDATE: online=%s last_refresh=%s", system.online, getattr(system, "last_refresh", None))
-        #_LOGGER.debug("IAQUALINK_EXOIQ - COORD tick")
+        if getattr(system, "should_skip_poll_for_schedule_edit", None):
+            if system.should_skip_poll_for_schedule_edit():
+                _LOGGER.debug(
+                    "iAQUALINK_eXO-IQ - Skip coordinator poll: pending schedule edits or cooldown active"
+                )
+                return {
+                    "online": getattr(system, "online", None),
+                    "ts": getattr(system, "last_refresh", None),
+                }
+
         await system.update()
-        return {"online": getattr(system, "online", None), "ts": getattr(system, "last_refresh", None)}
+        return {
+            "online": getattr(system, "online", None),
+            "ts": getattr(system, "last_refresh", None),
+        }
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -207,19 +235,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await coordinator.async_config_entry_first_refresh()
     except Exception as e:
-        _LOGGER.warning("IAQUALINK_EXOIQ - First refresh failed (will retry later): %s", e)
+        _LOGGER.warning("iAQUALINK_eXO-IQ - First refresh failed (will retry later): %s", e)
     hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-
-    data = hass.data[DOMAIN].pop(entry.entry_id, None)
-    if data and "httpx_client" in data:
-        await data["httpx_client"].aclose()
-
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)    
+    hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
 
 
@@ -255,7 +279,7 @@ class AqualinkEntity(CoordinatorEntity):
         self._last_available = object()
 
     def _handle_coordinator_update(self) -> None:
-        #_LOGGER.debug("IAQUALINK_EXOIQ - ENTITY UPDATE: %s", self.entity_id)
+        #_LOGGER.debug("iAQUALINK_eXO-IQ - ENTITY UPDATE: %s", self.entity_id)
         super()._handle_coordinator_update()
 
     @property
@@ -268,12 +292,12 @@ class AqualinkEntity(CoordinatorEntity):
     def extra_state_attributes(self):
         attrs = {}
     
-        # 1) timestamp HA : last successful refresh of the coordinator
+        # 1) Timestamp HA : last successful refresh of the coordinator
         dt = getattr(self.coordinator, "last_update_success_time", None)
         if dt:
             attrs["coordinator_last_update"] = dt.astimezone(timezone.utc).isoformat()
     
-        # 2) timestamp "integration" : the last_refresh (epoch seconds)
+        # 2) Timestamp "integration" : the last_refresh (epoch seconds)
         ts = getattr(self.dev.system, "last_refresh", None)
         if ts:
             attrs["api_last_refresh_epoch"] = int(ts)
@@ -284,51 +308,65 @@ class AqualinkEntity(CoordinatorEntity):
     def device_info(self) -> DeviceInfo:
         dev_name = getattr(self.dev, "name", "") or ""
         serial = getattr(self.dev.system, "serial", None) or "unknown"
-        sys_name = getattr(self.dev.system, "name", None) or f"ExoIQ {serial}"
 
-        # ---- SCHEDULES: child device ----
-        if dev_name.startswith("schedule_"):
-            schedule_id = (
-                self.dev.data.get("schedule_id")
-                or self.dev.data.get("schedule_key")
-                or dev_name
-            )
-            schedule_name = self.dev.data.get("schedule_name") or self.dev.label
-
-            return DeviceInfo(
-                identifiers={(DOMAIN, f"{serial}_{schedule_id}")},
-                name=f"Schedule {schedule_name}",
-                manufacturer=MANUFACTURER,
-                model="Exo Schedule",
-                via_device=(DOMAIN, serial),   # parent
-            )
-        
         # ---- Exo system: child device ----
-         exo_system_names = {
+        exo_system_names = {
             "sn",
             "vr",
             "version",
             "error_state",
             "error_code",
-            "exo_rssi",
-            "exo_fw_version",
-            "exo_cloud_timestamp",
-            "exo_mqtt_status",
+            "rssi",
+            "fw_version",
+            "cloud_timestamp",
+            "mqtt_connection",
+            "exo_state",
+            "last_refresh",
         }
 
         if dev_name in exo_system_names:
             return DeviceInfo(
                 identifiers={(DOMAIN, f"{serial}_exo_system")},
-                name="Exo System",
+                name="Diagnostic",
                 manufacturer=MANUFACTURER,
-                model="ExoIQ Diagnostics",
+                model="eXO-IQ Diagnostic",
+                via_device=(DOMAIN, serial),
+            )
+
+        # ---- SCHEDULES: grouped child device ----
+        if dev_name.startswith("schedule_"):
+            data = getattr(self.dev, "data", {}) or {}
+            endpoint = data.get("endpoint")
+
+            group = get_timer_group_from_endpoint(endpoint)
+            if group is not None:
+                group_id, group_name = group
+
+                return DeviceInfo(
+                    identifiers={(DOMAIN, f"{serial}_{group_id}")},
+                    name=group_name,
+                    manufacturer=MANUFACTURER,
+                    model="eXO-IQ Schedule",
+                    via_device=(DOMAIN, serial),
+                )
+
+            # fallback
+            schedule_id = data.get("schedule_id") or dev_name
+            schedule_name = data.get("schedule_name") or self.dev.label
+
+            return DeviceInfo(
+                identifiers={(DOMAIN, f"{serial}_{schedule_id}")},
+                name=f"Schedule {schedule_name}",
+                manufacturer=MANUFACTURER,
+                model="eXO-IQ Schedule",
                 via_device=(DOMAIN, serial),
             )
 
         # ---- ALL OTHER ENTITIES: Parent device ----
         return DeviceInfo(
             identifiers={(DOMAIN, serial)},
-            name=sys_name,
+            name="eXO-IQ",
             manufacturer=MANUFACTURER,
-            model=self.dev.system.__class__.__name__,
+            model="eXO-IQ System",
+            configuration_url="https://prod.zodiac-io.com",
         )
