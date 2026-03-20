@@ -1,7 +1,7 @@
 {
   "domain": "iaqualink_exoiq",
   "name": "iAqualink eXO-IQ by Dje",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "documentation": "https://github.com/dje2912/iaqualink_exoiq",
   "issue_tracker": "https://github.com/dje2912/iaqualink_exoiq/issues",
   "codeowners": [ "@dje2912" ],
