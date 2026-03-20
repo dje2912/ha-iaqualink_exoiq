@@ -62,7 +62,7 @@ ENTITY_DIAG_SENSOR_NAMES = {
     "error_state": "eXO-IQ Error State",
     "error_code": "eXO-IQ Error Code",
     "rssi": "eXO-IQ RSSI",
-    "fw_version": "Cloud API Version",
+    "fw_version": "Cloud Firwware Version",
     "cloud_status": "eXO-IQ Cloud Status",
     "cloud_timestamp": "Cloud Timestamp",
     "last_refresh": "Cloud Last Refresh",

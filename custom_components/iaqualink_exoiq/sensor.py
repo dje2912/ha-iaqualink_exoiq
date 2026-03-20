@@ -138,7 +138,7 @@ class AqualinkSensorEntity(AqualinkEntity, SensorEntity):
             self._attr_icon = ENTITY_ICONS[dev_name]
 
         # --- Class for timestamp / last refresh ---
-        if dev_name in ("cloud_timestamp", "last_refresh"):
+        if dev_name in ("cloud_timestamp", "cloud_status", "last_refresh"):
             self._attr_device_class = SensorDeviceClass.TIMESTAMP
 
         # --- Class for temperature ---
