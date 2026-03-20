@@ -266,6 +266,12 @@ class ExoSystem(AqualinkSystem):
                 "state": aws.get("timestamp"),
             }
 
+        if "status" in aws:
+            devices["cloud_status"] = {
+                "name": "cloud_status",
+                "state": aws.get("status"),
+            }
+
         if "RSSI" in debug:
             devices["rssi"] = {
                 "name": "rssi",
