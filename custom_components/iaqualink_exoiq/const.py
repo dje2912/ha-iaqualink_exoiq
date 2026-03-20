@@ -41,6 +41,7 @@ ENTITY_ICONS = {
     "sn": "mdi:identifier",
     "error_state": "mdi:alert-circle",
     "error_code": "mdi:alert-circle-outline",
+    "cloud_status": "mdi:connection",
 
     # Diagnostic binary sensors
     "exo_state": "mdi:lan-connect",
@@ -62,11 +63,12 @@ ENTITY_DIAG_SENSOR_NAMES = {
     "error_code": "eXO-IQ Error Code",
     "rssi": "eXO-IQ RSSI",
     "fw_version": "Cloud API Version",
+    "cloud_status": "eXO-IQ Cloud Status",
     "cloud_timestamp": "Cloud Timestamp",
-    "last_refresh" : "Cloud Last Refresh",
+    "last_refresh": "Cloud Last Refresh",
 }
 
 ENTITY_DIAG_BINARY_SENSOR_NAMES = {
-    "exo_state": "eXO-IQ Status",
+    "exo_state": "eXO-IQ State",
     "mqtt_connection": "Cloud MQTT Connection",
 }

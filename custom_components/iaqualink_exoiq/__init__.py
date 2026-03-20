@@ -319,9 +319,11 @@ class AqualinkEntity(CoordinatorEntity):
             "rssi",
             "fw_version",
             "cloud_timestamp",
+            "cloud_status",
             "mqtt_connection",
             "exo_state",
             "last_refresh",
+
         }
 
         if dev_name in exo_system_names:
